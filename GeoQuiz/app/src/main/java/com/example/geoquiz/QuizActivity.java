@@ -1,5 +1,6 @@
 package com.example.geoquiz;
 
+import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
@@ -10,10 +11,18 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import java.text.BreakIterator;
+
 public class QuizActivity extends AppCompatActivity {
 
     private static final String TAG = "QuizActivity";
     private static final String KEY_INDEX = "index";
+    private static final int REQUEST_CODE_CHEAT = 0;
+
+
+    private static final String EXTRA_CHEAT_CHANCE =
+            "com.example.geoquiz.cheat_chance";
+
 
     private Button mTrueButton;
     private Button mFalseButton;
@@ -31,7 +40,15 @@ public class QuizActivity extends AppCompatActivity {
             new Question(R.string.question_asia,true)
     };
 
+
+
+    //记录作弊次数
+    private static int mCheatChance = 3;
+    private TextView mCheatChanceTextView;
+
+
     private int mCurrentIndex=0;
+    private boolean mIsCheater;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -83,16 +100,20 @@ public class QuizActivity extends AppCompatActivity {
         mNextButton = (Button) findViewById(R.id.next_button);
         mNextButton.setOnClickListener(v -> {
             mCurrentIndex = (mCurrentIndex + 1) % mQuestionBank.length;
+            mIsCheater = false;
             updateQuestion();
         });
 
         mCheatButton = (Button)findViewById(R.id.cheat_button);
+        mCheatChanceTextView = (TextView)findViewById(R.id.show_cheat_chance);
         mCheatButton.setOnClickListener(new View.OnClickListener(){
             @Override
             public void onClick(View v) {
                 //Start CheatActivity
-                Intent intent = new Intent (QuizActivity.this,CheatActivity.class);
-                startActivity(intent);
+                boolean answerIsTrue = mQuestionBank[mCurrentIndex].isAnswerTrue();
+                Intent intent = CheatActivity.newIntent(QuizActivity.this,answerIsTrue);
+                intent.putExtra(EXTRA_CHEAT_CHANCE,mCheatChance);//多传入剩余可查看答案的次数
+                startActivityForResult(intent,REQUEST_CODE_CHEAT);
             }
         });
 
@@ -100,8 +121,33 @@ public class QuizActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onActivityResult(int requestCode,int resultCode,Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != Activity.RESULT_OK) {
+            return;
+        }
+
+        if (requestCode == REQUEST_CODE_CHEAT) {
+            if (data == null) {
+                return;
+            }
+            mIsCheater = CheatActivity.wasAnswerShown(data);
+            mCheatChance = data.getIntExtra(EXTRA_CHEAT_CHANCE,0);
+        }
+    }
+
+    @Override
     protected void onStart() {
         super.onStart();
+
+        if(mCheatChance == 0) {
+            mCheatButton.setEnabled(false);
+            mCheatChanceTextView.setText("no chance left");
+        }
+        else{
+            mCheatChanceTextView.setText(mCheatChance + " time(s) left");
+        }
+
         Log.d(TAG,"onStart() called");
     }
 
@@ -150,10 +196,15 @@ public class QuizActivity extends AppCompatActivity {
         boolean answerIsTrue = mQuestionBank[mCurrentIndex].isAnswerTrue();
 
         int messageResId = 0;
-        if (userPressedTrue == answerIsTrue){
-            messageResId = R.string.correct_toast;
-        } else {
-            messageResId = R.string.incorrect_toast;
+
+        if(mIsCheater) {
+            messageResId = R.string.judgement_toast;
+        }else {
+            if (userPressedTrue == answerIsTrue) {
+                messageResId = R.string.correct_toast;
+            } else {
+                messageResId = R.string.incorrect_toast;
+            }
         }
 
         Toast.makeText(this,messageResId,Toast.LENGTH_SHORT)
